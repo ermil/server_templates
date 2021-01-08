@@ -1,0 +1,48 @@
+version: '3'
+services:
+  windscribe:
+    image: "concisions/windscribe-socks-server:latest"
+    restart: always
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - 1080:1080
+    tmpfs:
+      - /etc/windscribe:exec
+    environment:
+      # set DNS servers; 
+      WINDSCRIBE_DNS: "${WINDSCRIBE_DNS}"
+      # Windscribe configuration; 
+      WINDSCRIBE_USERNAME: "${WINDSCRIBE_USERNAME}"
+      WINDSCRIBE_PASSWORD: "${WINDSCRIBE_PASSWORD}"
+      # requests a specific location
+      WINDSCRIBE_LOCATION: "${WINDSCRIBE_LOCATION}"
+    networks:
+      - traefik
+  qbittorrent:
+    image: linuxserver/qbittorrent
+    restart: always
+    depends_on:
+      - windscribe
+    environment:
+      - TZ=$TZ
+      - PGID=$PGID
+      - PUID=$PUID
+      - WEBUI_PORT=8080
+    volumes:
+      - ./downloads:/downloads
+      - ./qbittorrent_conf:/config
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.torrent.entrypoints=$HTTP_ENTRYPOINT"
+      - "traefik.http.routers.torrent_https.entrypoints=$HTTPS_ENTRYPOINT"
+      - "traefik.http.routers.torrent.rule=Host(`$SUBDOMAIN.$DOMAIN`)"
+      - "traefik.http.routers.torrent_https.rule=Host(`$SUBDOMAIN.$DOMAIN`)"
+      - "traefik.http.routers.torrent.middlewares=$TO_HTTPS_ENTRYPOINT"
+      - "traefik.http.routers.torrent_https.tls=true"
+      - "traefik.http.services.torrent_https.loadbalancer.server.port=8080"
+    network_mode: "service:windscribe"
+networks:
+  traefik:
+    external:
+      name: traefik

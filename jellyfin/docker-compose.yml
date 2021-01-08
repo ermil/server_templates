@@ -1,0 +1,35 @@
+# Jellyfin - Media Server
+version: '3'
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    restart: unless-stopped
+    networks:
+      - traefik
+    ports:
+      - "8096:8096"
+      - "8920:8920"
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+      UMASK_SET: 022
+    volumes:
+      - ./jelly_config:/config
+      - ./jelly_cache:/cache
+      - $MEDIA_PATH:/media
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.jellyfin.entrypoints=$HTTP_ENTRYPOINT"
+      - "traefik.http.routers.jellyfin_https.entrypoints=$HTTPS_ENTRYPOINT"
+      - "traefik.http.routers.jellyfin.rule=Host(`$SUBDOMAIN.$DOMAIN`)"
+      - "traefik.http.routers.jellyfin_https.rule=Host(`$SUBDOMAIN.$DOMAIN`)"
+      - "traefik.http.routers.jellyfin.middlewares=$TO_HTTPS_ENTRYPOINT"
+      - "traefik.http.routers.jellyfin_https.tls=true"
+      - "traefik.http.services.jellyfin_https.loadbalancer.server.port=8096"
+networks:
+  traefik:
+    external:
+      name: traefik

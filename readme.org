@@ -1,0 +1,12 @@
+#+TITLE: Servers Config Template
+This repository contains docker compose files that I am using to host different services. The architecture is a public VPS with a few public services and a VPN to allow a secure connection to a few offsite private servers. This network is accessible only to clients using the VPN.
+
+There is also a configuration of a service that uses a commercial VPN service to hide real IP address of the networking for the services using it.
+
+Another usage of VPN can be to expose a few services from the private server as if it was on the public one. This allows to have more resources and prevent the necessity of a static IP address or share private IP address.
+One implementation has been done. Some work is still done on this one to improve it. An insight can be got from corresponding traefik and vpn_wireguard public server configurations.
+* Usage
+I have this repository in one folder. In another folder, I have the subfolders for every service I want on this server. For each of them, I do a simlink to the docker-compose (or other relevant files) associate with it (from this repository). 
+The file .env.template is copied to a .env file in the correct folder and edited with expected values. 
+To override a few instructions from the docker-compose.yml file, it is possible to use a docker-compose.override.yml ([[https://docs.docker.com/compose/extends/]]). I might use those to reduce the number of configurations for VPN and traefik setup in this repository.
+

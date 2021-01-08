@@ -1,0 +1,83 @@
+version: '3.3'
+services:
+  traefik:
+    image: traefik:latest # The official Traefik docker image
+    restart: always
+    command:
+      - --accessLog.fields.defaultMode=keep
+      - --accessLog.filePath=/var/log/access.log
+      - --accessLog.filters.statusCodes=400-499
+      - --api.dashboard=true
+      - --api.debug=false
+      - --api.insecure=false
+      - --certificatesResolvers.$CERT_RESOLVER.acme.email=$EMAIL_ADDRESS
+      - --certificatesResolvers.$CERT_RESOLVER.acme.storage=acme.json
+      - --certificatesResolvers.$CERT_RESOLVER.acme.dnsChallenge.provider=$DNS_PROVIDER
+      - --certificatesResolvers.$CERT_RESOLVER.acme.dnsChallenge.delayBeforeCheck=20
+      - --certificatesResolvers.$CERT_RESOLVER.acme.dnsChallenge.resolvers=$DNS_RESOLVER
+      - --entryPoints.http.address=:80
+      - --entryPoints.https.address=:443
+      - --entryPoints.public_http.address=:8081
+      - --entryPoints.public_https.address=:4243
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+      - --log.filePath=/var/log/traefik/traefik.log
+      - --log.level=INFO
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.exposedByDefault=false
+      - --providers.docker.watch=true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik_conf/acme.json:/acme.json
+      - ./traefik_conf/.htpasswd:/.htpasswd
+      - /var/log/traefik_secret:/var/log
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.middlewares.to_https.redirectScheme.scheme=https"
+      - "traefik.http.middlewares.my_auth.basicauth.usersfile=/.htpasswd"
+      - "traefik.http.routers.cert.entrypoints=$HTTPS_ENTRYPOINT"
+      - "traefik.http.routers.cert.tls.domains[0].main=$DOMAIN"
+      - "traefik.http.routers.cert.tls.domains[0].sans=*.$DOMAIN"
+      - "traefik.http.routers.cert.tls.certresolver=$CERT_RESOLVER"
+      - "traefik.http.routers.cert.service=noop@internal"
+      - "traefik.http.routers.traefik.entrypoints=$HTTP_ENTRYPOINT"
+      - "traefik.http.routers.traefik_https.entrypoints=$HTTPS_ENTRYPOINT"
+      - "traefik.http.routers.traefik.rule=Host(`$SUBDOMAIN.$DOMAIN`)"
+      - "traefik.http.routers.traefik_https.rule=Host(`$SUBDOMAIN.$DOMAIN`)"
+      - "traefik.http.routers.traefik.middlewares=to_https"
+      - "traefik.http.routers.traefik_https.tls=true"
+#      - "traefik.http.routers.traefik_https.tls.certresolver=$CERT_RESOLVER"
+      - "traefik.http.routers.traefik_https.service=api@internal"
+    env_file: ./.provider.env
+    networks:
+      back-end:
+        aliases :
+          - backend
+      vpn:
+        ipv4_address: $IPV4_ADDR
+      traefik:
+        aliases :
+          - websites
+    depends_on:
+      - socket-proxy
+  socket-proxy:
+      image: tecnativa/docker-socket-proxy
+      restart: unless-stopped
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock:ro
+      environment:
+          CONTAINERS: 1
+      networks:
+        - back-end
+networks:
+  vpn:
+    external:
+      name: vpn
+  traefik:
+    external:
+      name: traefik
+  back-end:
+    driver: bridge

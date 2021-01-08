@@ -1,0 +1,46 @@
+version: "3"
+services:
+  wordpress:
+    image: wordpress:5
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wp_${NAME}.entrypoints=$HTTP_ENTRYPOINT"
+      - "traefik.http.routers.wp_${NAME}_https.entrypoints=$HTTPS_ENTRYPOINT"
+      - "traefik.http.routers.wp_${NAME}.rule=Host(`$SUBDOMAIN.$DOMAIN`,`$DOMAIN`)"
+      - "traefik.http.routers.wp_${NAME}_https.rule=Host(`$SUBDOMAIN.$DOMAIN`,`$DOMAIN`)"
+      - "traefik.http.routers.wp_${NAME}.middlewares=to_https"
+      - "traefik.http.routers.wp_${NAME}_https.tls=true"
+      - "traefik.http.routers.wp_${NAME}_https.tls.certresolver=$CERT_RESOLVER"
+    environment:
+      - WORDPRESS_DB_HOST=mysql:3306
+      - WORDPRESS_DB_USER=$MYSQL_USER
+      - WORDPRESS_DB_PASSWORD=$MYSQL_PASSWORD
+      - WORDPRESS_DB_NAME=$MYSQL_DATABASE
+    volumes:
+     - ./wp_data:/var/www/html/wp-content
+    networks:
+      - traefik
+      - back-end
+    depends_on:
+      - mysql
+  mysql:
+    image: mysql:5.7
+    restart: always
+    labels:
+      - "traefik.enable=false"
+    environment:
+      - MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
+      - MYSQL_DATABASE=$MYSQL_DATABASE
+      - MYSQL_USER=$MYSQL_USER
+      - MYSQL_PASSWORD=$MYSQL_PASSWORD
+    volumes:
+      - ./database/data:/var/lib/mysql
+    networks:
+      - back-end
+networks:
+  traefik:
+    external:
+      name: traefik
+  back-end:
+    driver: bridge

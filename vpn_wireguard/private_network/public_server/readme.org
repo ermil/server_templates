@@ -1,0 +1,40 @@
+* Update wireguard on conf change
+** script updatewgonfilechange.sh
+Ce script permet de vérifier les changements sur le fichier wg0.conf qui est monté par le docker wireguard. Lors de la création ou modification de celui-ci, le script exécutera les commandes pour redémarrer wireguard et wg-gen qui ne fonctionne pas autrement.
+#+BEGIN_SRC 
+#!/bin/sh
+while inotifywait -e modify -e create /full/path/to/wg0.conf; do
+    /full/path/to/docker-compose -f /full/path/to/docker-compose.yml up -d --force-recreate --always-recreate-deps wireguard wg-gen coredns
+done
+#+END_SRC
+** Systemd
+Afin de lancer ce script au démarrage du système, un service pour systemctl est créé avec ce fichier ~/etc/systemd/system/monitor_wg0.service~. 
+#+BEGIN_SRC 
+[Unit]
+Description=Suivi des modification de la configuration du serveur wireguard
+Requires=docker.service
+After=docker.service
+
+[Service]
+ExecStart=/full/path/to/updatewgonfilechange.sh
+Restart=always
+RestartSec=5
+User=<user>
+Group=<group>
+
+[Install]
+WantedBy=multi-user.target
+#+END_SRC
+
+Ce script fournit les informations nécessaire au système pour lancer le script de mise à jour du conteneur en tant qu'utilisateur. 
+Pour activer ce nouveau service, il faut entrer les commandes suivantes:
+#+BEGIN_SRC 
+systemctl daemon-reload
+systemctl enable monitor_wg0.service
+systemctl start monitor_wg0.service
+#+END_SRC
+** journal
+Les logs pour débugger sont obtenus avec la commande 
+#+BEGIN_SRC 
+sudo journalctl
+#+END_SRC

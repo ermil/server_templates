@@ -1,0 +1,35 @@
+[Interface]
+Address = 10.0.0.1/24
+ListenPort = 51820
+PrivateKey = KEY
+
+PreUp = echo WireGuard PreUp
+PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PreDown = echo WireGuard PreDown
+PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+# Private server 1
+[Peer]
+PublicKey = KEY
+PresharedKey = KEY
+# vpn address, home network address range, docker network address range
+AllowedIPs = 10.0.0.2/32, 192.168.5.0/24, 172.11.12.0/16
+
+# Private server 2
+[Peer]
+PublicKey = KEY
+PresharedKey = KEY
+# vpn address, home network range (when using postUp and postDown rules as in this server config on a private server)
+AllowedIPs = 192.168.10.10/32, 10.0.0.3/32
+
+# Client 1
+[Peer]
+PublicKey = KEY
+PresharedKey = KEY
+AllowedIPs = 10.0.0.4/32
+
+# Client 2
+[Peer]
+PublicKey = KEY
+PresharedKey = KEY
+AllowedIPs = 10.0.0.5/32

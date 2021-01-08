@@ -1,0 +1,47 @@
+version: '3.3'
+services:
+  piwigo:
+    image: mathieuruellan/piwigo
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+    volumes:
+      - ./piwigo/data/galleries:/var/www/galleries
+      - ./piwigo/data/local:/var/www/local
+      - ./piwigo/data/plugins:/var/www/plugins
+      - ./piwigo/data/themes:/var/www/themes
+      - ./piwigo/cache:/var/www/_data/i
+      - ./piwigo/upload:/var/www/upload
+      - /var/log
+      - /var/log/$NAME:/var/log/apache2
+    networks:
+      - traefik
+      - back-end
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.piwigo.entrypoints=$HTTP_ENTRYPOINT"
+      - "traefik.http.routers.piwigo_https.entrypoints=$HTTPS_ENTRYPOINT"
+      - "traefik.http.routers.piwigo.rule=Host(`$SUBDOMAIN.$DOMAIN`)"
+      - "traefik.http.routers.piwigo_https.rule=Host(`$SUBDOMAIN.$DOMAIN`)"
+      - "traefik.http.routers.piwigo.middlewares=$TO_HTTPS_ENTRYPOINT"
+      - "traefik.http.routers.piwigo_https.tls=true"
+      - "traefik.http.services.piwigo_https.loadbalancer.server.port=80"
+  mariadb:
+    image: mariadb:10.5
+    restart: unless-stopped
+    volumes:
+      - ./db/mariadb/:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
+      - MYSQL_DATABASE=$MYSQL_DATABASE
+      - MYSQL_USER=$MYSQL_USER
+      - MYSQL_PASSWORD=$MYSQL_PASSWORD
+    networks:
+      - back-end
+networks:
+  traefik:
+    external:
+      name: traefik
+  back-end:
+    driver: bridge

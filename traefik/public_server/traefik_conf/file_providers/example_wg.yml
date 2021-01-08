@@ -1,0 +1,32 @@
+# http:
+#   routers:
+#     example_pub:
+#       entryPoints:
+#         - http
+#       rule: HostRegexp(`example.com`,`{subdomain:[a-z]+}.example.com`)
+#       middlewares:
+#         - to_https
+#       service: example
+#     example_pub_https:
+#       entryPoints:
+#         - https
+#       rule: HostRegexp(`example.com`,`{subdomain:[a-z]+}.example.com`)
+#       service: example
+#       tls:
+#         certResolver: myresolver
+#         domains:
+#           - main: example.com
+#             sans:
+#               - "*.example.com"
+
+#   services:
+#     example:
+#       loadBalancer:
+#         servers:
+#           - url: http://haproxy
+#         passHostHeader: true
+
+#   middlewares:
+#     to_https:
+#       redirectScheme:
+#         scheme: https

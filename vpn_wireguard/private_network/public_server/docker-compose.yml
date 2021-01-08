@@ -1,0 +1,54 @@
+version: '3.3'
+services:
+  wireguard:
+    image: masipcat/wireguard-go:latest
+    cap_add:
+     - NET_ADMIN
+    sysctls:
+     - net.ipv4.ip_forward=1
+    volumes:
+     - /dev/net/tun:/dev/net/tun
+     # Folder with 'publickey', 'privatekey' and 'wg0.conf'
+     - ./wg_conf:/etc/wireguard
+    environment:
+     - WG_COLOR_MODE=always
+     - LOG_LEVEL=info
+    ports:
+     - 51820:51820/udp
+    restart: always
+    networks:
+      - vpn
+  coredns:
+    image: coredns/coredns
+    restart: always
+    depends_on:
+      - wireguard
+    command: -conf /data/Corefile
+    volumes:
+      - ./coredns:/data:ro
+    network_mode: service:wireguard
+  wg-gen:
+    image: vx3r/wg-gen-web:latest
+    restart: unless-stopped
+    depends_on:
+      - wireguard
+    network_mode: service:wireguard
+    environment:
+     - WG_CONF_DIR=/data
+     - WG_INTERFACE_NAME=wg0.conf
+    # - SMTP_HOST=smtp.gmail.com
+    # - SMTP_PORT=587
+    # - SMTP_USERNAME=no-reply@gmail.com
+    # - SMTP_PASSWORD=******************
+    # - SMTP_FROM=Wg Gen Web <no-reply@gmail.com>
+    # - OAUTH2_PROVIDER_NAME=github
+    # - OAUTH2_PROVIDER=https://github.com
+    # - OAUTH2_CLIENT_ID=******************
+    # - OAUTH2_CLIENT_SECRET=******************
+    # - OAUTH2_REDIRECT_URL=https://wg-gen-web-demo.127-0-0-1.fr
+    volumes:
+    - ./wg_conf:/data
+networks:
+  vpn:
+    external:
+      name: vpn

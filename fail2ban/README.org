@@ -1,0 +1,81 @@
+#+TITLE:   Fail2Ban Docker configuration
+
+* Configuration du docker
+Fail2Ban permet d'éviter les attaques par force brute pour casser des mots de passe en bloquant l'accès au serveur à cette adresse IP pour une durée donnée. Pour se protéger de l'injection de SQL, c'est plutôt au niveau de l'application elle-même.
+** Configuration de l'environnement
+Voir [[https://github.com/crazy-max/docker-fail2ban][crazy-max/docker-fail2ban]] pour les variables d'environnement qui peuvent être utilisées pour configurer le conteneur. 
+Pour cette image, il faut créer un conteneur par table IP (INPUT, FORWARD, DOCKER-USER) qui est gérée par fail2ban. 
+*** fichiers .env
+- .env :: Ce fichier est utilisé pour définir les variables utilisées dans le docker-compose.yml.
+- fail2ban.env :: Ce fichier défini les variables d'environnement qui seront définies dans le conteneur plutôt que de toutes les définir dans le docker-compose. Cela permet aussi de partager les définitions communes des variables d'environnement entre les deux dockers.
+** Configuration des filtres et prisons
+*** sshd
+La configuration des filtres pour le sshd est exhaustive dans fail2ban. On n’y touche donc pas. Il y a toutefois plusieurs modes qui sont disponibles et il faut activer ce service. On a donc besoin d'un fichier de [[file:data-input/jail.d/sshd.local][jail]] qui prend la forme:
+#+begin_src 
+[sshd]
+enabled = true
+port = ssh
+filter = sshd[mode=aggressive]
+logpath = /var/log/auth.log
+maxretry = 5
+#+end_src
+*** traefik-auth
+Traefik a été configuré pour générer un log de toutes les connexions qui ont généré un code 4xx (erreur du client web). Fail2ban analyse donc ce fichier de log pour les erreurs 401 qui sont des accès non autorisés. 
+Un filtre adapté au log a été employé dans [[file:data-docker/filter.d/traefik-auth.local]] et la prison a été activée dans [[file:data-docker/jail.d/traefik-auth.local]].
+*** À faire
+Le log de traefik ne contient que les erreurs d'accès pour les erreurs de connexion via son interface de connexion, pas via la connexion au site wordpress(admin et comptes des usagés) qui est gérée par apache2 (semble difficile de déterminer les accès frauduleux), SQL et PHP. Il faudrait voir quelle est la meilleure façon de protéger ceux-ci et de bannir les adresses IP qui font des requêtes frauduleuses. Ou bien c'est via traefik?
+**** wordpress
+ Voir https://www.the-lazy-dev.com/en/install-fail2ban-with-docker/. 
+***** apache2
+ Le log de apache2 dans l'image de wordpress correspond au stdout et stderr du docker. Cela correspond aux fichiers /var/lib/docker/containers/*/*-json.log sur le système hôte.
+***** php
+***** sql
+* Documentation du fonctionnement de fail2ban
+** Les différentes commandes disponibles
+Se référer aux [[http://www.fail2ban.org/wiki/index.php/Commands][commandes du client fail2ban]]. 
+Pour l'exécuter dans le docker, il faut trouver l'~id~ du docker avec ~docker ps~. Puis, pour exécuter une commande on peut faire ~docker exec -it <id> <commande>~. Par exemple, pour vérifier le statut des prisons on peut faire:
+#+begin_src 
+docker exec -it <id> fail2ban-client status [<jail>]
+#+end_src
+
+** iptables
+Par défaut, il y a trois tables dans les systèmes Linux. Ces différentes tables définissent les règles qui s'appliquent à chacun des paquets qui passent par le système en fonction de leur source (point d'origine du paquet) et destination. 
+- INPUT :: Cette table gère les paquets dont la destination finale est l'adresse IP de l'hôte.
+- FORWARD :: Cette table s'applique aux paquets dont la source et la destination sont différentes de l'hôte.
+- OUTPUT :: Cette table s'applique aux paquets dont la source est le serveur. 
+
+Les paquets parcourent les règles dans une de ces chaines et ces sous-chaines tant qu'une action terminale n'est pas atteinte, soit une action parmis: 
+- ACCEPT :: laisse passer le paquet.
+- DROP :: laisse tomber le paquet sans renvoyer aucun message d'erreur
+- REJECT :: laisse tomber le paquet et envoie un message d'erreur
+- QUEUE :: transmets le paquet vers le userspace
+- RETURN :: arrête de traverser cette chaine et continue à la règle suivante dans la chaine qui a généré cet appel.
+
+Il est possible de lister l'ensemble des tables et règles avec ces commandes.
+#+begin_src bash
+sudo iptables -L
+sudo iptables -S
+#+end_src
+
+Lorsque docker s'initialise sur le système, il ajoute au début de la chaine ~FORWARD~ les chaines:
+- DOCKER-USER :: Il s'agit de la première règle de la chaine ~FORWARD~ et peut être configuré par l'utilisateur. Cela signifie aussi que si un port est ouvert par un docker, celui-ci est ouvert, peu importe les autres règles qui seront ajoutées à la chaine forward (manuellement ou via un coupe-feu). Il faut plutôt restreindre les ports ouvert par un docker par des règles dans cette chaine.
+- DOCKER-ISOLATION-STAGE-1 & -2 :: Permet de bloquer les communications entre les différents réseaux de type /bridge/ entre les dockers. Les dockers sur un même bridge peuvent communiquer entre eux, mais pas avec les autres dockers. Le premier étage d'isolation détermine si le paquet vient d'un /bridge/ et ça destination n'est pas ce même /bridge/. Si oui, alors, le paquet va au deuxième étage d'isolation qui vérifie si la destination est un des /bridge/. Si oui, c'est une transaction interdite, alors le paquet est laissé tomber. Sinon, il continue à traverser les différentes chaines pour déterminer la règle qui s'applique à celui-ci.
+- DOCKER :: Ce sont les règles créées automatiquement par docker et ne devraient pas être modifiées manuellement.
+
+Fail2ban bannit une adresse en ajoutant une règle soit aux tables ~INPUT~ ou ~DOCKER-USER~, selon la source du bannissement. La table ~INPUT~ gère entre autres les connexions ssh au serveur. La table ~DOCKER-USER~ va servir pour les paquets vers les dockers, dont la destination n'est donc pas l'hôte. Effectivement, les différents dockers ont leur adresse spécifique sur chacun des bridge. Par contre, je ne suis pas certaine de comprendre comment traefik informe l'hôte que la destination du paquet n'est pas l'hôte et doit passer par la table forward...
+** docker network
+Différents types de connexions réseau sont disponibles lors de la création d'un docker. 
+- bridge :: Le type de connexion utilisé par défaut. Celle-ci permet aux différents docker sur le même /bridge/ de communiquer entre eux et de l'isoler des autres conteneurs qui ne sont pas sur ce réseau. Il est possible de créer son propre /bridge/ ou d'utiliser celui fourni par défaut. En définir un spécifique est nettement plus [[https://docs.docker.com/network/bridge/][avantageux]].
+- host :: Retire l'isolation du réseau entre l'hôte et le conteneur. Celui-ci utilise donc directement le réseau de l'hôte.
+- overlay :: Connecte différents Docker daemons ensemble et permet à des dockers sur des hôtes différents de communiquer directement entre eux.
+- macvlan :: Permet d'assigner une adresse mac au conteneur et le fait apparaître comme un appareil physique en soit sur le réseau.
+- none :: Désactive les interfaces réseau du conteneur.
+
+Fail2ban utilise le mode ~host~ et les autres conteneurs ont une interface réseau de type /bridge/ avec un réseau défini avec la commande ~docker network create <network_name>~. J'imagine que l'interface de type host est nécessaire pour gérer les iptables de l'hôte. Il a aussi fallu ajouter des privilèges au docker pour que cette fonctionnalité soit possible avec les entrées NET_ADMIN et NET_RAW sous l'option ~cap_add~. Plus de détails sur ces capacités sont fournis sur cette [[http://man7.org/linux/man-pages/man7/capabilities.7.html][page]].
+** logs, filters, bans & actions
+- logs :: Fail2ban fonctionne en examinant les logs et détermine après x tentatives erronées de connexions en y secondes s'il faut bannir cette adresse IP en ajoutant une règle dans iptables. Il est donc important de s'assurer que les informations pertinentes soient présentes dans le log, mais éviter qu'il y ait trop d'informations inutiles pour fail2ban. Par ailleurs, le bannissement se fait à partir de l'heure du log, il faut donc s'assurer que le conteneur a donc la même configuration horaire que les logs qu'il lit. La chaine ~INPUT~ correspond aux connexions réalisées sur l'hôte. Celui-ci est configuré au fuseau horaire correctement. Il faut donc utiliser le même fuseau horaire. Les différents conteneurs ne sont généralement pas configurés au fuseau horaire. Pour le configurer, il serait nécessaire de monter deux fichiers système pour qu'ils aient la même configuration que l'hôte (/etc/localtime et /etc/timezone). Il semble préférable de plutôt configurer le conteneur fail2ban qui vérifie les logs associés aux dockers (pour la chaine DOCKER-USER) de seulement utiliser le fuseau horaire par défaut, UTC.
+- filters :: Ce sont les filtres qui identifient les lignes de log problématiques. Il faut donc qu'ils soient suffisamment génériques pour couvrir les cas d'injection de code et bannir la bonne adresse. Une grande quantité de filtres ont déjà été développés et testés par [[https://github.com/fail2ban/fail2ban/tree/master/config/filter.d][fail2ban]]. Il est aussi possible d'ajouter ces propres filtres ou personnaliser les options en créant un fichier <nom_du_filtre>.local, ce qui est le cas pour traefik. Dans ce docker, les fichiers de filtres doivent être définis sous data/filter.d et seront liés à la bonne place pour fail2ban. Sinon, pour un service donné, il suffit d'activer la vérification pour ce service dans un fichier jail.local ou jail.d/<service>.local
+- jail :: Les fichiers sont chargés dans l'ordre jail.conf, jail.d/*.conf (in alphabetical order), jail.local, jail.d/*.local (in alphabetical order). Le dernier a donc priorité sur les champs qu'il définit. Les autres champs sont tirés des fichiers chargés avant et de la configuration par défaut. 
+- bans :: Il est possible d'avoir des bannissements de plus en plus longs pour la même adresse IP. Il faut allonger la période entre les purges de la base de données et utiliser ~bantime.increment = true~. La formule appliquée est bantime.time * (1<<(bantime.count if bantime.count<20 else 20)) * bantime.factor, avec un bantime.time par défaut de 10 minutes, et le compte permet de multiplier la durée de la prison  jusqu'à 2^{20}.
+- actions :: Les actions déterminent ce qui est fait. Normalement il s'agit de bannir l'adresse, on peut aussi configurer pour recevoir un courriel. 
+

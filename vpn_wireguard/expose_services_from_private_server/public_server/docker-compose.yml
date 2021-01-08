@@ -1,0 +1,35 @@
+version: '3.3'
+services:
+  wireguard:
+    image: masipcat/wireguard-go:latest
+    restart: always
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    volumes:
+      - /dev/net/tun:/dev/net/tun
+      # Folder with 'publickey', 'privatekey' and 'wg0.conf'
+      - ./wg_conf:/etc/wireguard
+    environment:
+      - WG_COLOR_MODE=always
+      - LOG_LEVEL=info
+    ports:
+      - 51821:51821/udp
+    # Uncomment the following line when 'AllowedIPs' is '0.0.0.0/0'
+    # privileged: true
+    networks:
+      traefik:
+        ipv4_address: 172.28.0.56
+        aliases:
+          - haproxy
+  haproxy:
+    image: haproxy:latest
+    restart: always
+    network_mode: service:wireguard
+    volumes:
+      - ./ha_conf:/usr/local/etc/haproxy:ro
+networks:
+  traefik:
+    external:
+      name: traefik
